@@ -35,6 +35,8 @@ const horror = new Horror3D(c3d, c2d, onEvent);
 function onEvent(name, arg) {
   if (name === 'levelDone') {
     if (arg < 2) cute.start(arg + 1);
+    // build the heavy 3D garden while the black Day 3 card is up, so the big scare doesn't stutter
+    if (arg === 1) setTimeout(() => { try { horror.build(); horror.warm(); } catch (e) { console.error(e); } }, 400);
   } else if (name === 'transition') {
     state = 'transition';
     audio.glitch(0.6);
@@ -77,6 +79,11 @@ if (save && save.stage === 'garden') { $('contBtn').classList.remove('hidden'); 
 const padLabel = () => $('padBtn').textContent = `Controllers: ${input.padsEnabled ? 'ON' : 'OFF'}`;
 padLabel();
 $('padBtn').onclick = () => { input.setPads(!input.padsEnabled); padLabel(); };
+const GFX = ['auto', 'high', 'low'], gfxName = { auto: 'Auto', high: 'High (realistic)', low: 'Low (fast)' };
+const getGfx = () => { try { return localStorage.getItem('meadow_quality') || 'auto'; } catch (e) { return 'auto'; } };
+const gfxLabel = () => { const g = getGfx(); $('gfxBtn').textContent = 'Graphics: ' + gfxName[g] + (g === 'auto' ? (TOUCH ? ' · Low' : ' · High') : ''); };
+gfxLabel();
+$('gfxBtn').onclick = () => { const g = GFX[(GFX.indexOf(getGfx()) + 1) % 3]; try { localStorage.setItem('meadow_quality', g); } catch (e) {} gfxLabel(); };
 $('playBtn').onclick = async () => {
   audio.init(); goFullscreen();
   await document.fonts.ready;

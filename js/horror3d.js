@@ -4,6 +4,11 @@ import * as THREE from 'three';
 import * as A from './art.js';
 import { audio } from './audio.js';
 import { input } from './input.js';
+import * as RT from './real/textures.js';
+import * as RN from './real/nature.js';
+import * as RF from './real/fx.js';
+import * as RP from './real/post.js';
+import { buildSunny as buildRealSunny } from './real/sunny.js';
 
 const $ = id => document.getElementById(id);
 const BOUND = 44.3;
@@ -28,14 +33,15 @@ export class Horror3D {
   constructor(canvas, cuteCanvas, emit) {
     this.emit = emit;
     this.cuteCanvas = cuteCanvas;
-    const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.mobile = (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window);
     r.setPixelRatio(Math.min(devicePixelRatio, this.mobile ? 1 : 1.5));
     r.setSize(innerWidth, innerHeight);
+    r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.0;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x06050a);
-    this.scene.fog = new THREE.FogExp2(0x06050a, 0.052);
-    this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 300);
+    this.scene.background = new THREE.Color(0x05050a);
+    this.scene.fog = new THREE.FogExp2(0x05050a, 0.058);
+    this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.03, 300);
     this.camera.rotation.order = 'YXZ';
     this.scene.add(this.camera);
     addEventListener('resize', () => this.resize());
@@ -49,42 +55,56 @@ export class Horror3D {
     this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix();
   }
 
+  // compile every shader once up front
+  warm() { try { this.renderer.compile(this.scene, this.camera); } catch (e) {} }
+
+  get qualitySetting() { try { return localStorage.getItem('meadow_quality') || 'auto'; } catch (e) { return 'auto'; } }
+
   // ------------------------------------------------------------ world
   build() {
     if (this.built) return; this.built = true;
+    const q = this.qualitySetting;
+    const high = this.high = q === 'high' || (q === 'auto' && !this.mobile);
+    const r = this.renderer;
+    r.setPixelRatio(Math.min(devicePixelRatio, high ? 1.5 : 1));
+    r.shadowMap.enabled = high; r.shadowMap.type = THREE.PCFSoftShadowMap;
     const S = this.scene, R = rng(777);
     this.circles = []; this.boxes = []; this.occluders = [];
-    this.ambient = new THREE.AmbientLight(0x2a2440, 0.9); S.add(this.ambient);
-    const moon = this.moon = new THREE.DirectionalLight(0x6677aa, 0.5); moon.position.set(-20, 40, 10); S.add(moon);
-    const fl = this.flashlight = new THREE.SpotLight(0xfff0d0, 45, 40, 0.5, 0.55, 1);
-    fl.position.set(0.25, -0.2, 0); fl.target.position.set(0, -0.3, -5);
-    this.camera.add(fl); this.camera.add(fl.target);
+    this.ambient = new THREE.HemisphereLight(0x323a5a, 0x0a0806, 0.9); S.add(this.ambient);
+    const moon = this.moon = new THREE.DirectionalLight(0x7080b0, 0.55); moon.position.set(-20, 40, 10); S.add(moon);
 
-    // ground
-    const gc = A.makeCanvas(256, 256, (ctx, w, h) => {
-      ctx.fillStyle = '#1d2a1b'; ctx.fillRect(0, 0, w, h);
-      for (let i = 0; i < 900; i++) { ctx.fillStyle = `rgba(${R() * 40 | 0},${40 + R() * 40 | 0},${R() * 30 | 0},0.5)`; ctx.fillRect(R() * w, R() * h, 2, 5); }
-      for (let i = 0; i < 6; i++) { ctx.fillStyle = 'rgba(40,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(R() * w, R() * h, 10 + R() * 20, 6 + R() * 10, R() * 3, 0, 7); ctx.fill(); }
-    });
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), new THREE.MeshLambertMaterial({ map: tex(gc, 40) }));
-    ground.rotation.x = -Math.PI / 2; S.add(ground);
+    // Mochi's paw + the flashlight (the light lives at the lens, so shadows come from your hand)
+    this.hand = RF.buildHand(this.camera, high);
+    this.flashlight = this.hand.light;
+    this.hand.rig.visible = false;
+
+    // ground: mud, dead grass, puddles that catch the light
+    const gs = RT.ground(high ? 1024 : 512, 22);
+    const groundM = new THREE.MeshStandardMaterial({ ...gs, roughness: 1, metalness: 0 });
+    groundM.normalScale.set(1.2, 1.2);
+    const groundG = new THREE.PlaneGeometry(140, 140, 70, 70);
+    const gp = groundG.attributes.position;
+    for (let i = 0; i < gp.count; i++) { const x = gp.getX(i), y = gp.getY(i); if (Math.abs(x) < 46 && Math.abs(y) < 46) gp.setZ(i, (Math.sin(x * 0.37) * Math.cos(y * 0.29) + Math.sin(x * 0.11 + y * 0.13)) * 0.06); }
+    groundG.computeVertexNormals();
+    const ground = new THREE.Mesh(groundG, groundM);
+    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; S.add(ground);
 
     // stars
-    const sp = []; for (let i = 0; i < 500; i++) { const a = R() * 6.28, b = R() * 1.2 + 0.15; sp.push(Math.cos(a) * Math.cos(b) * 150, Math.sin(b) * 150, Math.sin(a) * Math.cos(b) * 150); }
+    const sp = []; for (let i = 0; i < 700; i++) { const a = R() * 6.28, b = R() * 1.2 + 0.15; sp.push(Math.cos(a) * Math.cos(b) * 150, Math.sin(b) * 150, Math.sin(a) * Math.cos(b) * 150); }
     const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
-    S.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0x9988aa, size: 1.6, sizeAttenuation: false, fog: false })));
+    S.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0x8a8aa0, size: 1.3, sizeAttenuation: false, fog: false })));
 
-    // grass tufts
-    const grass = new THREE.InstancedMesh(new THREE.ConeGeometry(0.06, 0.4, 3), new THREE.MeshLambertMaterial({ color: 0x2c3d22 }), this.mobile ? 1200 : 3000);
-    const m4 = new THREE.Matrix4();
-    for (let i = 0; i < grass.count; i++) { m4.makeRotationY(R() * 6); m4.setPosition((R() - 0.5) * 92, 0.18, (R() - 0.5) * 92); grass.setMatrixAt(i, m4); }
-    S.add(grass);
-
-    // picket fence
+    // weathered picket fence
     const posts = []; for (let k = -45; k <= 45; k += 0.6) posts.push([k, -45], [k, 45], [-45, k], [45, k]);
-    const fence = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16, 1.2, 0.08), new THREE.MeshLambertMaterial({ color: 0xc9bfb0 }), posts.length);
-    posts.forEach(([x, z], i) => { m4.makeRotationY(Math.abs(x) === 45 ? Math.PI / 2 : 0); m4.setPosition(x, 0.6, z); fence.setMatrixAt(i, m4); });
-    S.add(fence);
+    const ws = RT.wood(256, [190, 182, 168]);
+    const picketG = new THREE.BoxGeometry(0.14, 1.2, 0.05); picketG.translate(0, 0.6, 0);
+    const fence = new THREE.InstancedMesh(picketG, new THREE.MeshStandardMaterial({ ...ws, roughness: 0.9 }), posts.length);
+    const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion();
+    posts.forEach(([x, z], i) => {
+      qq.setFromEuler(new THREE.Euler((R() - 0.5) * 0.12, Math.abs(x) === 45 ? Math.PI / 2 : 0, (R() - 0.5) * 0.15));
+      m4.compose(new THREE.Vector3(x, 0, z), qq, new THREE.Vector3(1, 0.8 + R() * 0.35, 1)); fence.setMatrixAt(i, m4);
+    });
+    fence.castShadow = fence.receiveShadow = high; S.add(fence);
 
     // points of interest
     const POI = this.POI = {
@@ -94,9 +114,14 @@ export class Horror3D {
     this.buildHouse(POI.house); this.buildSwing(POI.swing); this.buildPicnic(POI.picnic); this.buildBea(POI.bea); this.buildPip(POI.pip);
     this.buildBoxes();
 
-    // trees
-    const trunkM = new THREE.MeshLambertMaterial({ color: 0x2e2018 }), leafM = new THREE.MeshLambertMaterial({ color: 0x18281a, flatShading: true });
-    const trunkG = new THREE.CylinderGeometry(0.32, 0.5, 3.2, 7), leafG = new THREE.IcosahedronGeometry(1.7, 0);
+    // dead, twisted trees. Simple invisible trunks are used for line-of-sight tests.
+    const bs = RT.bark(256);
+    const barkM = new THREE.MeshStandardMaterial({ ...bs, color: 0x8a7a6a, roughness: 0.95 });
+    barkM.normalScale.set(1.5, 1.5);
+    const templates = RN.treeTemplates(high ? 7 : 4, barkM, !high);
+    const proxyG = new THREE.CylinderGeometry(0.4, 0.5, 6, 6), proxyM = new THREE.MeshBasicMaterial();
+    const eyeM = new THREE.MeshPhysicalMaterial({ map: RT.eyeball(), roughness: 0.15, clearcoat: 1 });
+    const irisM = new THREE.MeshStandardMaterial({ map: RT.iris(), roughness: 0.1, transparent: true });
     this.treeEyes = [];
     let placed = 0;
     for (let tries = 0; placed < 75 && tries < 2000; tries++) {
@@ -104,23 +129,27 @@ export class Horror3D {
       if (Math.abs(x) < 4 && z > 26) continue;
       if (Object.values(POI).some(p => Math.hypot(p.x - x, p.z - z) < 7)) continue;
       if (this.circles.some(c => Math.hypot(c.x - x, c.z - z) < 4)) continue;
-      const g = new THREE.Group(); g.position.set(x, 0, z);
-      const tr = new THREE.Mesh(trunkG, trunkM); tr.position.y = 1.6; g.add(tr); this.occluders.push(tr);
-      for (const [lx, ly, lz, s] of [[0, 3.8, 0, 1.2], [-0.9, 3.2, 0.3, 0.9], [0.9, 3.3, -0.2, 0.95]]) {
-        const l = new THREE.Mesh(leafG, leafM); l.position.set(lx, ly, lz); l.scale.setScalar(s); l.rotation.set(R() * 3, R() * 3, 0); g.add(l);
-      }
+      const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = R() * 6.28;
+      const tm = new THREE.Mesh(templates[placed % templates.length], barkM); tm.scale.setScalar(0.85 + R() * 0.4);
+      tm.castShadow = tm.receiveShadow = high; g.add(tm);
+      const proxy = new THREE.Mesh(proxyG, proxyM); proxy.position.y = 3; proxy.visible = false; g.add(proxy); this.occluders.push(proxy);
       if (placed % 5 === 0) {
-        const eyes = new THREE.Group(); eyes.position.set(0, 2.2, 0);
+        // eyes grown into the bark
+        const eyes = new THREE.Group(); eyes.position.set(0, 1.7 + R() * 0.6, 0);
         for (const s of [-1, 1]) {
-          const w = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), new THREE.MeshBasicMaterial({ color: 0x8a8070 }));
-          w.position.set(s * 0.17, 0, 0.42);
-          const pu = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), new THREE.MeshBasicMaterial({ color: 0x000000 })); pu.position.z = 0.11; w.add(pu);
+          const w = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 12), eyeM); w.position.set(s * 0.12, 0, 0.36);
+          const ir = new THREE.Mesh(new THREE.CircleGeometry(0.05, 16), irisM); ir.position.z = 0.088; w.add(ir);
           eyes.add(w);
         }
         g.add(eyes); this.treeEyes.push(eyes);
       }
       S.add(g); this.circles.push({ x, z, r: 0.55 }); placed++;
     }
+
+    // dense grass that moves in the wind
+    const avoid = (x, z) => this.boxes.some(b => x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1);
+    this.grass = RN.grassField(high ? 45000 : 7000, 90, avoid);
+    this.grass.mesh.receiveShadow = high; S.add(this.grass.mesh);
 
     this.buildFlowers(R);
     this.buildCutouts(R);
@@ -130,10 +159,21 @@ export class Horror3D {
     this.buildBoard();
     this.buildDoor();
     this.buildSunny();
+
+    // atmosphere
+    this.mist = RF.buildMist(S, high ? 40 : 14, 88);
+    this.dust = RF.buildDust(S, high ? 500 : 150);
+    this.breath = RF.buildBreath(this.camera, S);
+    this.breathT = 2;
+    if (high) this.post = RP.buildPost(r, S, this.camera);
+
+    // everything solid casts and catches shadows from the flashlight
+    if (high) S.traverse(o => { if (o.isMesh && !o.isInstancedMesh && o.visible && !o.material.transparent && !(o.material.isMeshBasicMaterial)) { if (o.castShadow === false && o.userData.noShadow) return; o.castShadow = true; o.receiveShadow = true; } });
+    this.hand.rig.traverse(o => { o.castShadow = false; o.receiveShadow = false; });
   }
 
   buildHouse(p) {
-    const wallM = new THREE.MeshLambertMaterial({ color: 0x6a4c58 }), roofM = new THREE.MeshLambertMaterial({ color: 0x4a1a2a });
+    const wallM = new THREE.MeshStandardMaterial({ ...RT.wood(256, [170, 120, 135]), roughness: 0.9 }), roofM = new THREE.MeshStandardMaterial({ ...RT.wood(256, [80, 30, 40]), roughness: 0.85 });
     const g = new THREE.Group(); g.position.copy(p); this.scene.add(g);
     const walls = [[0, -3, 6.2, 0.2], [-3, 0, 0.2, 6.2], [3, 0, 0.2, 6.2], [-2, 3, 2.2, 0.2], [2, 3, 2.2, 0.2]];
     for (const [x, z, w, d] of walls) {
@@ -147,12 +187,12 @@ export class Horror3D {
       ctx.fillStyle = '#5a0000'; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.ellipse(60 + i * 30, 120 + (i % 2) * 20, 14, 18, 0.3, 0, 7); ctx.fill(); ctx.fillRect(56 + i * 30, 130, 6, 80 + i * 10); }
       ctx.font = 'bold 34px sans-serif'; ctx.fillText('LET ME IN', 40, 60);
     });
-    const sm = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshLambertMaterial({ map: tex(smear), transparent: true }));
+    const sm = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshStandardMaterial({ map: tex(smear), transparent: true }));
     sm.position.set(-2, 1.6, 3.12); g.add(sm);
   }
 
   buildSwing(p) {
-    const m = new THREE.MeshLambertMaterial({ color: 0x5a3a2a });
+    const m = new THREE.MeshStandardMaterial({ color: 0x4a3a30, metalness: 0.6, roughness: 0.7 });
     const g = new THREE.Group(); g.position.copy(p); this.scene.add(g);
     for (const s of [-1.6, 1.6]) for (const t of [-0.6, 0.6]) {
       const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.2), m); leg.position.set(s, 1.5, t * 0.9); leg.rotation.x = t * 0.4; g.add(leg);
@@ -160,9 +200,9 @@ export class Horror3D {
     const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.4), m); bar.rotation.z = Math.PI / 2; bar.position.y = 3; g.add(bar);
     this.swing = new THREE.Group(); this.swing.position.y = 3; g.add(this.swing);
     for (const s of [-0.35, 0.35]) { const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 2.4), m); rope.position.set(s, -1.2, 0); this.swing.add(rope); }
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.35), new THREE.MeshLambertMaterial({ color: 0x8a2030 })); seat.position.y = -2.4; this.swing.add(seat);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.35), new THREE.MeshStandardMaterial({ color: 0x8a2030 })); seat.position.y = -2.4; this.swing.add(seat);
     const bunnyTex = tex(A.makeCanvas(256, 256, ctx => A.bunny(ctx, 128, 240, 3.2, { scribble: true, fur: '#d8d0d0' })));
-    const doll = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), new THREE.MeshLambertMaterial({ map: bunnyTex, alphaTest: 0.5, side: THREE.DoubleSide }));
+    const doll = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7), new THREE.MeshStandardMaterial({ map: bunnyTex, alphaTest: 0.5, side: THREE.DoubleSide }));
     doll.position.set(0, -2.05, 0); this.swing.add(doll);
     this.circles.push({ x: p.x, z: p.z, r: 0.4 });
   }
@@ -172,9 +212,9 @@ export class Horror3D {
       for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { ctx.fillStyle = (x + y) % 2 ? '#d8c8c8' : '#9a2a3a'; ctx.fillRect(x * 32, y * 32, 32, 32); }
       ctx.fillStyle = 'rgba(70,0,0,0.85)'; ctx.beginPath(); ctx.ellipse(150, 120, 70, 50, 0.4, 0, 7); ctx.fill();
     });
-    const b = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), new THREE.MeshLambertMaterial({ map: tex(blanket) }));
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), new THREE.MeshStandardMaterial({ map: tex(blanket) }));
     b.rotation.x = -Math.PI / 2; b.position.set(p.x, 0.02, p.z); this.scene.add(b);
-    const cupM = new THREE.MeshLambertMaterial({ color: 0xe8d8e0 });
+    const cupM = new THREE.MeshStandardMaterial({ color: 0xe8d8e0 });
     for (const [x, z] of [[-1, -0.8], [0.9, -1], [1, 0.9], [-0.8, 1]]) {
       const c = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 0.16, 10), cupM); c.position.set(p.x + x, 0.1, p.z + z); this.scene.add(c);
     }
@@ -182,42 +222,63 @@ export class Horror3D {
     const cake = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.35, 14), new THREE.MeshStandardMaterial({ color: 0x6a0a10, roughness: 0.25 }));
     cake.position.set(p.x, 0.18, p.z); this.scene.add(cake);
     for (let i = 0; i < 5; i++) {
-      const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 5), new THREE.MeshLambertMaterial({ color: 0xe8e0c0 }));
+      const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 5), new THREE.MeshStandardMaterial({ color: 0xe8e0c0 }));
       tooth.position.set(p.x + Math.cos(i) * 0.3, 0.42, p.z + Math.sin(i) * 0.3); this.scene.add(tooth);
     }
     this.circles.push({ x: p.x, z: p.z, r: 0.5 });
   }
 
   bloodPool(x, z, r) {
-    const m = new THREE.Mesh(new THREE.CircleGeometry(r, 18), new THREE.MeshStandardMaterial({ color: 0x3a0000, roughness: 0.12, metalness: 0.3 }));
-    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.015 + Math.random() * 0.005, z); m.scale.y = 0.6 + Math.random() * 0.5; this.scene.add(m);
+    if (!this.splats) this.splats = [1, 2, 3, 4].map(i => RT.splat(i));
+    const M = this.high ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+    const mat = new M({ color: 0x2a0000, roughness: 0.06, metalness: 0.1, alphaMap: this.splats[(Math.random() * 4) | 0], transparent: true, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, ...(this.high ? { clearcoat: 1, clearcoatRoughness: 0.05 } : {}) });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(r * 2.4, r * 2.4), mat);
+    m.rotation.set(-Math.PI / 2, 0, Math.random() * 6.28); m.position.set(x, 0.02 + Math.random() * 0.006, z); m.userData.noShadow = true; this.scene.add(m);
+  }
+
+  // wet, glistening guts
+  entrails(x, z, n = 3) {
+    if (!this.fleshSet) this.fleshSet = RT.flesh(256);
+    const M = this.high ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+    const mat = new M({ ...this.fleshSet, color: 0xc07070, roughness: 0.25, ...(this.high ? { clearcoat: 1, clearcoatRoughness: 0.1 } : {}) });
+    for (let k = 0; k < n; k++) {
+      const pts = []; let px = x, pz = z;
+      for (let i = 0; i < 9; i++) { px += (Math.random() - 0.5) * 0.7; pz += (Math.random() - 0.5) * 0.7; pts.push(new THREE.Vector3(px, 0.06 + Math.random() * 0.05, pz)); }
+      const t = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.05 + Math.random() * 0.03, 8), mat);
+      this.scene.add(t);
+    }
   }
 
   buildBea(p) {
     const top = tex(A.makeCanvas(256, 160, ctx => { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, 256, 160); ctx.clip(); A.bear(ctx, 128, 300, 4.2, { hollow: true, blood: true }); ctx.restore(); }));
     const bot = tex(A.makeCanvas(256, 160, ctx => { ctx.save(); ctx.translate(0, -160); A.bear(ctx, 128, 300, 4.2, { back: true, noBow: true }); ctx.restore(); ctx.fillStyle = '#7a0000'; for (let i = 0; i < 9; i++) ctx.fillRect(20 + i * 26, 0, 10, 14 + (i * 37) % 30); }));
-    const mTop = new THREE.MeshLambertMaterial({ map: top, alphaTest: 0.4, side: THREE.DoubleSide });
-    const mBot = new THREE.MeshLambertMaterial({ map: bot, alphaTest: 0.4, side: THREE.DoubleSide });
+    const mTop = new THREE.MeshStandardMaterial({ map: top, alphaTest: 0.4, side: THREE.DoubleSide });
+    const mBot = new THREE.MeshStandardMaterial({ map: bot, alphaTest: 0.4, side: THREE.DoubleSide });
     const lower = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1), mBot); lower.position.set(p.x, 0.5, p.z); lower.rotation.y = 0.4; this.scene.add(lower);
     const upper = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1), mTop); upper.position.set(p.x + 0.9, 0.06, p.z + 0.8); upper.rotation.set(-Math.PI / 2 + 0.15, 0, 0.6); this.scene.add(upper);
-    const stuff = new THREE.MeshLambertMaterial({ color: 0x8a8078 });
+    const stuff = new THREE.MeshStandardMaterial({ color: 0x8a8078 });
     for (let i = 0; i < 10; i++) { const s = new THREE.Mesh(new THREE.SphereGeometry(0.05 + Math.random() * 0.06, 6, 5), stuff); s.position.set(p.x + (Math.random() - 0.2) * 1.4, 0.08, p.z + Math.random() * 1.2); this.scene.add(s); }
-    this.bloodPool(p.x + 0.4, p.z + 0.5, 1.2);
+    this.bloodPool(p.x + 0.4, p.z + 0.5, 1.2); this.bloodPool(p.x - 0.8, p.z + 1.6, 0.5);
+    this.entrails(p.x + 0.6, p.z + 0.7, 2);
   }
 
   buildPip(p) {
-    const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 0.6, 10), new THREE.MeshLambertMaterial({ color: 0x3a2818 }));
+    const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.65, 0.6, 16), new THREE.MeshStandardMaterial({ ...RT.bark(128), roughness: 0.95 }));
     stump.position.set(p.x, 0.3, p.z); this.scene.add(stump);
-    const hat = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x3d76c8 }));
+    const hat = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x3d76c8 }));
     hat.position.set(p.x, 0.6, p.z); this.scene.add(hat);
-    const feather = new THREE.MeshLambertMaterial({ color: 0xd8b848, side: THREE.DoubleSide });
+    const feather = new THREE.MeshStandardMaterial({ color: 0xd8b848, side: THREE.DoubleSide });
     for (let i = 0; i < 26; i++) {
       const f = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.3), feather);
       f.position.set(p.x + (Math.random() - 0.5) * 3, 0.03 + Math.random() * 0.02, p.z + (Math.random() - 0.5) * 3); f.rotation.set(-Math.PI / 2, 0, Math.random() * 6); this.scene.add(f);
     }
-    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 6), new THREE.MeshLambertMaterial({ color: 0xc86a1a }));
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 6), new THREE.MeshStandardMaterial({ color: 0xc86a1a }));
     beak.position.set(p.x + 0.9, 0.08, p.z + 0.5); beak.rotation.z = Math.PI / 2; this.scene.add(beak);
     this.bloodPool(p.x + 0.3, p.z + 0.2, 1.6); this.bloodPool(p.x - 1.2, p.z + 1.4, 0.6);
+    this.entrails(p.x + 0.9, p.z + 0.6, 3);
+    // something was dragged away
+    for (let i = 0; i < 9; i++) this.bloodPool(p.x - 1.5 - i * 1.1, p.z - 0.8 - i * 0.9, 0.35 - i * 0.02);
     this.circles.push({ x: p.x, z: p.z, r: 0.7 });
   }
 
@@ -233,13 +294,15 @@ export class Horror3D {
       for (let i = 0; i < 30; i++) { ctx.beginPath(); let x = R() * 256, y = R() * 128; ctx.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (R() - 0.5) * 20; y += (R() - 0.5) * 20; ctx.lineTo(x, y); } ctx.stroke(); }
       
     }));
-    const petalM = new THREE.MeshStandardMaterial({ map: petalTex, roughness: 0.35 });
-    const stemM = new THREE.MeshLambertMaterial({ color: 0x3a2a1a });
-    const eyeM = new THREE.MeshStandardMaterial({ map: eyeTex, roughness: 0.15 });
-    const irisM = new THREE.MeshStandardMaterial({ color: 0x5a0a0a, roughness: 0.1 }), pupilM = new THREE.MeshBasicMaterial({ color: 0x000000 });
-    const toothM = new THREE.MeshLambertMaterial({ color: 0xe0d8b8 }), mouthM = new THREE.MeshBasicMaterial({ color: 0x120000 });
-    const petalG = new THREE.SphereGeometry(0.5, 10, 6);
-    const dripG = new THREE.SphereGeometry(0.035, 5, 4), dripM = new THREE.MeshBasicMaterial({ color: 0x6a0000 });
+    const fl = RT.flesh(256); this.fleshSet = fl;
+    const PM = this.high ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+    const petalM = new PM({ ...fl, roughness: 0.3, side: THREE.DoubleSide, ...(this.high ? { clearcoat: 1, clearcoatRoughness: 0.15, sheen: 0.4, sheenColor: new THREE.Color(0xff6060) } : {}) });
+    const stemM = new PM({ ...fl, color: 0x6a5040, roughness: 0.4, ...(this.high ? { clearcoat: 0.6 } : {}) });
+    const eyeM = new PM({ map: RT.eyeball(), roughness: 0.1, ...(this.high ? { clearcoat: 1, clearcoatRoughness: 0.02 } : {}) });
+    const irisM = new THREE.MeshStandardMaterial({ map: RT.iris(), roughness: 0.05, transparent: true }), pupilM = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const toothM = new THREE.MeshStandardMaterial({ color: 0xd8ccaa, roughness: 0.3 }), mouthM = new PM({ color: 0x200000, roughness: 0.05, ...(this.high ? { clearcoat: 1 } : {}) });
+    const petalG = new THREE.SphereGeometry(0.5, 18, 12);
+    const dripG = new THREE.SphereGeometry(0.035, 5, 4), dripM = new THREE.MeshStandardMaterial({ color: 0x3a0000, roughness: 0.05 });
     this.flowers = [];
     let n = 0;
     for (let tries = 0; n < 34 && tries < 1500; tries++) {
@@ -249,7 +312,7 @@ export class Horror3D {
       if (Object.values(this.POI).some(p => Math.hypot(p.x - x, p.z - z) < 5)) continue;
       const h = 1.4 + R() * 1.8, sc = 0.7 + R() * 0.6;
       const g = new THREE.Group(); g.position.set(x, 0, z);
-      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.1, h, 6), stemM); stem.position.y = h / 2; g.add(stem);
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.1, h, 10, 6), stemM); stem.position.y = h / 2; g.add(stem);
       const head = new THREE.Group(); head.position.y = h; head.scale.setScalar(sc); g.add(head);
       const face = new THREE.Group(); head.add(face); // faces +z, gets turned to the player
       for (let i = 0; i < 7; i++) {
@@ -261,8 +324,8 @@ export class Horror3D {
       let eye = null;
       if (kind === 'eye') {
         eye = new THREE.Group(); face.add(eye);
-        eye.add(new THREE.Mesh(new THREE.SphereGeometry(0.33, 16, 12), eyeM));
-        const iris = new THREE.Mesh(new THREE.CircleGeometry(0.14, 16), irisM); iris.position.z = 0.305; eye.add(iris);
+        eye.add(new THREE.Mesh(new THREE.SphereGeometry(0.33, 28, 20), eyeM));
+        const iris = new THREE.Mesh(new THREE.CircleGeometry(0.15, 24), irisM); iris.position.z = 0.3; eye.add(iris);
         const pupil = new THREE.Mesh(new THREE.CircleGeometry(0.065, 12), pupilM); pupil.position.z = 0.312; eye.add(pupil);
       } else {
         const m = new THREE.Mesh(new THREE.CircleGeometry(0.32, 16), mouthM); m.position.z = 0.06; face.add(m);
@@ -287,7 +350,7 @@ export class Horror3D {
       ctx.fillStyle = '#c03050'; ctx.fillText('♥', 110, 170);
       ctx.fillStyle = '#000'; ctx.fillRect(40, 60, 176, 10);
     }));
-    const m = new THREE.MeshLambertMaterial({ map: side });
+    const m = new THREE.MeshStandardMaterial({ ...RT.cardboard(256), roughness: 0.95 });
     this.hideBoxes = [];
     for (const [x, z, ry] of [[-6, 30, 0.2], [14, 8, -0.4], [-14, -4, 0.6], [6, -12, 0], [-30, -26, 0.3], [32, -10, -0.2], [-8, -36, 0.1], [30, 34, 0.5]]) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.4, 1.5), m); b.position.set(x, 0.7, z); b.rotation.y = ry; this.scene.add(b);
@@ -297,7 +360,7 @@ export class Horror3D {
 
   buildCutouts(R) {
     const tx = tex(A.makeCanvas(256, 256, ctx => A.bunny(ctx, 128, 250, 3.3, { scribble: true, fur: '#e0d8d8' })));
-    const m = new THREE.MeshLambertMaterial({ map: tx, alphaTest: 0.5, side: THREE.DoubleSide });
+    const m = new THREE.MeshStandardMaterial({ map: tx, alphaTest: 0.5, side: THREE.DoubleSide });
     this.cutouts = [];
     for (const [x, z] of [[8, 26], [-26, 10], [18, -18], [-12, -24], [34, 22], [-34, -12]]) {
       const c = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), m); c.position.set(x, 0.7, z); this.scene.add(c);
@@ -313,11 +376,11 @@ export class Horror3D {
       [[-4, 24, 0.2], ['HIDE IN THE', 'BOXES (E)', 'it cant see in']],
       [[2.5, 19, 0], ['find the 5', 'smiles and go', 'HOME']]
     ];
-    const postM = new THREE.MeshLambertMaterial({ color: 0x3a2a1a });
+    const postM = new THREE.MeshStandardMaterial({ color: 0x3a2a1a });
     for (const [[x, z, ry], lines] of notes) {
       const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry;
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.4, 0.08), postM); post.position.y = 0.7; g.add(post);
-      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.82), new THREE.MeshLambertMaterial({ map: tex(crayon(lines)) })); sign.position.set(0, 1.35, 0.05); g.add(sign);
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.82), new THREE.MeshStandardMaterial({ map: tex(crayon(lines)) })); sign.position.set(0, 1.35, 0.05); g.add(sign);
       this.scene.add(g);
     }
   }
@@ -346,8 +409,8 @@ export class Horror3D {
   buildBoard() {
     this.cuteTex = tex(this.cuteCanvas);
     const N = 14, w = 16 / N;
-    const backM = new THREE.MeshLambertMaterial({ color: 0x7a5c3c });
-    const frontM = new THREE.MeshBasicMaterial({ map: this.cuteTex, fog: false });
+    const backM = new THREE.MeshStandardMaterial({ color: 0x7a5c3c });
+    const frontM = new THREE.MeshBasicMaterial({ map: this.cuteTex, fog: false, toneMapped: false });
     this.strips = [];
     this.board = new THREE.Group(); this.board.position.set(0, 0, BOARD_Z); this.scene.add(this.board);
     for (let i = 0; i < N; i++) {
@@ -371,43 +434,21 @@ export class Horror3D {
       A.bear(ctx, 90, 305, 1.2, {}); A.duck(ctx, 160, 305, 1.1, { facing: -1 });
       ctx.fillStyle = '#ff7eb6'; ctx.font = 'bold 30px "Fredoka", sans-serif'; ctx.textAlign = 'center'; ctx.fillText('HOME ♥', 128, 200);
     });
-    this.door = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 3.4), new THREE.MeshBasicMaterial({ map: tex(c), fog: false }));
+    this.door = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 3.4), new THREE.MeshBasicMaterial({ map: tex(c), fog: false, toneMapped: false }));
     this.door.position.set(0, 1.7, BOARD_Z - 0.6); this.door.rotation.y = Math.PI; this.door.visible = false; this.scene.add(this.door);
     this.doorLight = new THREE.PointLight(0xffb0d8, 0, 16, 1); this.doorLight.position.set(0, 2, BOARD_Z - 2); this.scene.add(this.doorLight);
   }
 
   buildSunny() {
-    const faceC = A.makeCanvas(512, 512, ctx => A.sun(ctx, 256, 256, 158, 0, { mood: 3 }));
-    const faceT = tex(faceC);
-    const g = this.sunny = new THREE.Group();
-    const blk = new THREE.MeshLambertMaterial({ color: 0x0b0a0a });
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.24, 1.6, 7), blk); body.position.y = 2.1; g.add(body);
-    this.sunnyBody = body;
-    this.legs = [];
-    for (const s of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.04, 1.4, 5), blk); leg.position.set(s * 0.13, 0.7, 0); g.add(leg); this.legs.push(leg);
-    }
-    this.arms = [];
-    for (const s of [-1, 1]) {
-      const pivot = new THREE.Group(); pivot.position.set(s * 0.2, 2.8, 0);
-      const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.03, 2.1, 5), blk); arm.position.y = -1.05; pivot.add(arm);
-      for (let f = -1; f <= 1; f++) { const fin = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.008, 0.45, 4), blk); fin.position.set(f * 0.04, -2.3, 0); fin.rotation.z = f * 0.2; pivot.add(fin); }
-      g.add(pivot); this.arms.push({ pivot, s });
-    }
-    this.head = new THREE.Group(); this.head.position.y = 3.35; g.add(this.head);
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshLambertMaterial({ map: faceT, alphaTest: 0.3, side: THREE.DoubleSide, emissive: 0x2a1800, emissiveMap: faceT }));
-    this.head.add(face); this.sunnyFace = face;
-    g.position.set(0, 0, 22);
-    this.scene.add(g);
+    const real = this.sunnyReal = buildRealSunny(this.high);
+    this.sunny = real.group; this.head = real.head; this.sunnyBody = real.body; this.sunnyFace = real.face;
+    this.headY = real.head.position.y;
+    this.sunny.position.set(0, 0, 22);
+    this.scene.add(this.sunny);
     this.newPose();
   }
 
-  newPose() {
-    for (const a of this.arms) { a.pivot.rotation.z = a.s * (0.05 + Math.random() * 0.9); a.pivot.rotation.x = -Math.random() * 1.4; }
-    this.headTilt = (Math.random() - 0.5) * 0.9;
-    this.sunnyBody.rotation.z = (Math.random() - 0.5) * 0.2;
-    this.legs.forEach((l, i) => l.rotation.x = (Math.random() - 0.5) * 0.6 * (i ? 1 : -1));
-  }
+  newPose() { this.sunnyReal.newPose(); this.headTilt = this.sunnyReal.pose.headTilt; }
 
   // ------------------------------------------------------------ phases
   startTransition() {
@@ -542,7 +583,32 @@ export class Horror3D {
     else if (this.phase === 'caught') this.updateCaught(dt);
     else if (this.phase === 'exit') { this.camera.position.z += dt * 1.5; }
     this.animateWorld(dt, T);
-    this.renderer.render(this.scene, this.camera);
+    this.realFrame(dt, T);
+    if (this.post) this.post.composer.render(dt); else this.renderer.render(this.scene, this.camera);
+  }
+
+  realFrame(dt, T) {
+    const cam = this.camera;
+    // the beam follows the bulb
+    const k = this.flashlight.intensity / 45;
+    this.hand.beam.visible = k > 0.02; this.hand.beamM.uniforms.uI.value = k; this.hand.beamM.uniforms.uTime.value = T;
+    this.hand.lensM.color.setScalar(0.15 + Math.min(1, k) * 0.85);
+    this.hand.rig.visible = this.phase === 'play' && !(this.pl && this.pl.hidden);
+    this.grass.uniforms.uTime.value = T;
+    this.mist.update(dt, 44); this.dust.update(cam.position, T); this.breath.update(dt);
+    this.sunnyReal.animate(dt);
+    if (this.post) {
+      const u = this.post.cam, d = this.sunny ? this.sunny.position.distanceTo(cam.position) : 99;
+      const near = this.phase === 'play' ? Math.max(0, 1 - d / 10) : 0;
+      u.uTime.value = T % 100;
+      u.uAb.value = 0.0015 + near * 0.012 + (this.phase === 'caught' ? 0.02 : 0);
+      u.uRed.value = Math.max(this.raging ? 0.25 : 0, near * 0.45, this.phase === 'caught' ? 0.6 : 0);
+      u.uGrain.value = 0.06 + near * 0.06;
+      // motion blur when you whip around
+      const turn = Math.abs(this.lastYaw === undefined ? 0 : (this.pl ? this.pl.yaw : 0) - this.lastYaw) / Math.max(dt, 0.001);
+      this.lastYaw = this.pl ? this.pl.yaw : 0;
+      this.post.blur.value += (Math.min(0.75, turn * 0.08) - this.post.blur.value) * Math.min(1, dt * 10);
+    }
   }
 
   updateTransition(dt) {
@@ -666,24 +732,54 @@ export class Horror3D {
       const wantSprint = input.sprint() && moving && !pl.crouch && pl.stamina > 1;
       speed = pl.crouch ? 1.7 : wantSprint ? 6.0 : 3.4;
       if (wantSprint) pl.stamina = Math.max(0, pl.stamina - dt * 22); else pl.stamina = Math.min(100, pl.stamina + dt * 14);
-      if (moving) {
-        const fx = -Math.sin(pl.yaw), fz = -Math.cos(pl.yaw), rx = Math.cos(pl.yaw), rz = -Math.sin(pl.yaw);
-        const nx = mx / Math.max(1, len), ny = my / Math.max(1, len);
-        pl.pos.x += (fx * ny + rx * nx) * speed * dt; pl.pos.z += (fz * ny + rz * nx) * speed * dt;
+      // stumbling: running in the dark, running near it, or running on empty
+      if (pl.stumble > 0) { pl.stumble -= dt; speed *= 0.35; }
+      else if (wantSprint && Math.random() < dt * (0.05 + (pl.stamina < 25 ? 0.25 : 0) + (this.sunny.position.distanceTo(pl.pos) < 8 ? 0.2 : 0))) {
+        pl.stumble = 0.7; audio.step(1.6); audio.thud(0); this.makeNoise(14);
+      }
+      // smooth acceleration so you have weight
+      const fx = -Math.sin(pl.yaw), fz = -Math.cos(pl.yaw), rx = Math.cos(pl.yaw), rz = -Math.sin(pl.yaw);
+      const nx = moving ? mx / Math.max(1, len) : 0, ny = moving ? my / Math.max(1, len) : 0;
+      pl.vx = (pl.vx || 0) + (((fx * ny + rx * nx) * speed) - (pl.vx || 0)) * Math.min(1, dt * 9);
+      pl.vz = (pl.vz || 0) + (((fz * ny + rz * nx) * speed) - (pl.vz || 0)) * Math.min(1, dt * 9);
+      const v = Math.hypot(pl.vx, pl.vz);
+      if (v > 0.05) {
+        pl.pos.x += pl.vx * dt; pl.pos.z += pl.vz * dt;
         this.collide(pl.pos, 0.35);
-        pl.bob += dt * speed * 2.2;
-        pl.stepT -= dt * speed;
-        if (pl.stepT <= 0) {
-          pl.stepT = 2.1; const loud = pl.crouch ? 0.25 : wantSprint ? 1.4 : 0.8;
+        const before = Math.floor(pl.bob / Math.PI);
+        pl.bob += dt * v * 2.3;
+        if (Math.floor(pl.bob / Math.PI) !== before) {   // a foot hits the ground
+          const loud = pl.crouch ? 0.25 : wantSprint ? 1.4 : 0.8;
           audio.step(loud); this.makeNoise(pl.crouch ? 2.5 : wantSprint ? 24 : 9);
         }
       }
+      pl.speedNow = v; pl.sprinting = wantSprint;
       const eye = pl.crouch ? 0.95 : 1.6;
       pl.pos.y += (eye - pl.pos.y) * Math.min(1, dt * 10);
     }
-    cam.position.copy(pl.pos); cam.position.y += moving ? Math.sin(pl.bob) * 0.05 : 0;
-    cam.rotation.set(pl.pitch, pl.yaw, moving ? Math.sin(pl.bob * 0.5) * 0.008 : 0);
+    // head bob: drop on each step, sway side to side, tilt a little; heavier when running
+    const vNow = pl.hidden ? 0 : (pl.speedNow || 0), amp = Math.min(1, vNow / 3.4) * (pl.sprinting ? 1.7 : pl.crouch ? 0.5 : 1);
+    pl.amp = (pl.amp || 0) + (amp - (pl.amp || 0)) * Math.min(1, dt * 6);
+    const bobY = -Math.abs(Math.sin(pl.bob)) * 0.055 * pl.amp, bobX = Math.sin(pl.bob) * 0.03 * pl.amp;
+    const stum = pl.stumble > 0 ? Math.sin((0.7 - pl.stumble) / 0.7 * Math.PI) : 0;
+    // breathing sway when standing still and scared
+    const idle = Math.sin(performance.now() / 1000 * (1.2 + (audio.breath || 0) * 2)) * 0.006 * (1 + (audio.breath || 0) * 3);
+    cam.position.copy(pl.pos);
+    cam.position.x += Math.cos(pl.yaw) * bobX; cam.position.z -= Math.sin(pl.yaw) * bobX;
+    cam.position.y += bobY + idle - stum * 0.45;
+    cam.rotation.set(pl.pitch + stum * 0.35 + idle * 0.5, pl.yaw, Math.sin(pl.bob) * 0.012 * pl.amp + stum * 0.12);
     cam.updateMatrixWorld();
+    // the paw lags behind your look and bounces with your steps
+    const dyaw = pl.yaw - (pl.lastYaw ?? pl.yaw), dpit = pl.pitch - (pl.lastPitch ?? pl.pitch);
+    pl.lastYaw = pl.yaw; pl.lastPitch = pl.pitch;
+    const sw = this.hand.sway;
+    sw.rotation.y += (Math.max(-0.25, Math.min(0.25, dyaw * 3)) - sw.rotation.y) * Math.min(1, dt * 8);
+    sw.rotation.x += (Math.max(-0.25, Math.min(0.25, dpit * 3)) - sw.rotation.x) * Math.min(1, dt * 8);
+    sw.position.set(Math.sin(pl.bob) * 0.012 * pl.amp, -Math.abs(Math.cos(pl.bob)) * 0.015 * pl.amp - stum * 0.08, 0);
+    sw.rotation.z = Math.sin(pl.bob) * 0.04 * pl.amp + (pl.flicker > 0 ? (Math.random() - 0.5) * 0.1 : 0);
+    // cold night: your breath shows
+    this.breathT -= dt * (1 + (audio.breath || 0) * 2.5);
+    if (this.breathT <= 0) { this.breathT = 3.2; if (!pl.hidden) this.breath.puff(0.7 + (audio.breath || 0)); }
 
     // flicker when it is close
     const dist = this.sunny.position.distanceTo(new THREE.Vector3(pl.pos.x, 0, pl.pos.z));
@@ -738,10 +834,11 @@ export class Horror3D {
     if (!this.blackoutEv) audio.setBreath(Math.max((60 - pl.stamina) / 60, 1 - dist / 10, pl.hidden && dist < 10 ? 0.7 : 0));
     // the closer it is, the more your eyes go wrong
     const k = Math.max(0, 1 - dist / 9), cv = this.renderer.domElement;
-    if (k > 0.02) {
+    if (k > 0.02 && !this.post) {
       cv.style.filter = `contrast(${1 + k * 0.5}) saturate(${1 - k * 0.7}) sepia(${k * 0.4})`;
       cv.style.transform = `translate(${(Math.random() - 0.5) * k * 10}px, ${(Math.random() - 0.5) * k * 10}px) scale(${1 + k * 0.03})`;
-    } else if (cv.style.filter) { cv.style.filter = ''; cv.style.transform = ''; }
+    } else if (k > 0.02) { cv.style.transform = `translate(${(Math.random() - 0.5) * k * 6}px, ${(Math.random() - 0.5) * k * 6}px)`; }
+    else if (cv.style.filter || cv.style.transform) { cv.style.filter = ''; cv.style.transform = ''; }
   }
 
   isSeen(lightOn) {
@@ -888,7 +985,7 @@ export class Horror3D {
   retry() {
     this.caughtShown = false;
     $('caughtUI').classList.add('hidden'); $('blackout').classList.remove('on');
-    this.head.scale.setScalar(1); this.head.position.set(0, 3.35, 0);
+    this.head.scale.setScalar(1); this.head.position.set(0, this.headY, 0);
     this.resetPlayer();
     this.sunny.position.copy(this.farSpot());
     this.mon.state = this.stickerCount >= 5 ? 'rage' : 'patrol'; this.mon.timer = 0; this.mon.target.copy(this.sunny.position);

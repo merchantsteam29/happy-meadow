@@ -1,0 +1,25 @@
+// Screenshots of the realistic garden: node tools/playtest/real.mjs [low]
+import { open } from './harness.mjs';
+const { ev, shot, sleep, check, done } = await open(import.meta.url);
+const q = process.argv[2] || 'high';
+await sleep(1500);
+await ev(`localStorage.setItem('meadow_quality', '${q}'); location.reload();`);
+await sleep(3000);
+await ev('window.__mmCap = 0.1');
+await ev(`document.getElementById('playBtn').click()`); await sleep(800);
+await ev(`__mm.startGarden(null)`);
+for (let i = 0; i < 60 && !(await ev(`return !!__mm.horror.built && !!document.getElementById('wakePrompt') && !document.getElementById('wakePrompt').classList.contains('hidden')`)); i++) await sleep(500);
+await ev(`document.getElementById('wakePrompt').click()`);
+for (let i = 0; i < 120 && await ev(`return __mm.horror.phase`) !== 'play'; i++) await sleep(500);
+check(await ev(`return __mm.horror.phase`) === 'play', 'reached play');
+console.log('quality high =', await ev(`return __mm.horror.high`), 'post =', await ev(`return !!__mm.horror.post`));
+const view = async (js, name, wait = 2500) => { await ev(`const h=__mm.horror; h.paused=false; ${js}`); await sleep(wait); await shot(name); };
+await view(`h.pl.yaw=0; h.pl.pitch=-0.05;`, 'r-fwd');
+await view(`const f=h.flowers[0].g.position; h.pl.pos.set(f.x+2.2,1.6,f.z); h.pl.yaw=Math.PI/2; h.pl.pitch=0.25;`, 'r-flower');
+await view(`h.pl.pos.set(-18.5,1.6,27.5); h.pl.yaw=0.5; h.pl.pitch=-0.7;`, 'r-bea');
+await view(`h.pl.pos.set(22,1.6,-26.5); h.pl.yaw=0; h.pl.pitch=-0.6;`, 'r-pip');
+await view(`h.pl.pos.set(0,1.6,-12); h.pl.yaw=0; h.pl.pitch=0;`, 'r-house');
+await view(`h.mon.state='patrol'; h.pl.pos.set(0,1.6,10); h.pl.yaw=0; h.pl.pitch=0.15; h.sunny.position.set(0,0,6.5); h.newPose();`, 'r-sunny');
+await view(`h.pl.pos.set(0,1.6,8.2); h.pl.pitch=0.3; h.sunny.position.set(0,0,6.5);`, 'r-sunny-close');
+await view(`h.sunny.position.set(30,0,-30); const e=h.treeEyes[0].parent.position; h.pl.pos.set(e.x, 1.6, e.z+2.2); h.pl.yaw=0; h.pl.pitch=0.1;`, 'r-treeeyes');
+await done();

@@ -1,0 +1,12 @@
+import { open } from './harness.mjs';
+const { ev, shot, sleep, done } = await open(import.meta.url);
+await sleep(1500); await ev(`localStorage.setItem('meadow_quality', '${process.argv[2] || 'high'}'); location.reload();`); await sleep(3000);
+await ev('window.__mmCap = 0.1'); await ev(`document.getElementById('playBtn').click()`); await sleep(800); await ev(`__mm.startGarden(null)`);
+for (let i = 0; i < 60 && await ev(`return document.getElementById('wakePrompt').classList.contains('hidden')`); i++) await sleep(500);
+await ev(`document.getElementById('wakePrompt').click()`);
+for (let i = 0; i < 120 && await ev(`return __mm.horror.phase`) !== 'play'; i++) await sleep(500);
+const view = async (js, name) => { await ev(`const h=__mm.horror; h.paused=false; ${js}`); await sleep(2500); await shot(name); };
+await view(`h.mon.state='patrol'; h.pl.pos.set(0,1.6,11); h.pl.yaw=0; h.pl.pitch=0.12; h.sunny.position.set(0,0,6.5); h.newPose();`, 's-mid');
+await view(`h.pl.pos.set(0,1.6,9); h.pl.pitch=0.42; h.sunny.position.set(0,0,6.5);`, 's-close');
+await view(`h.sunny.position.set(30,0,-30); h.pl.pos.set(0,1.6,30); h.pl.yaw=0; h.pl.pitch=-0.1;`, 's-fwd');
+await done();

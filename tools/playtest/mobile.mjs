@@ -22,13 +22,15 @@ for (let i = 0; i < 20; i++) { if (!await ev(`return !!(__mm.cute.script||__mm.c
 check(!await ev(`return !!(__mm.cute.dialog)`), 'tapping advances dialog');
 // jump
 const [jx, jy] = await center('#tbJump');
-await touch('touchStart', [[jx, jy]]); await sleep(120);
-const vy = await ev(`return __mm.cute.p.y`);
+await touch('touchStart', [[jx, jy]]);
+let vy = 440; for (let i = 0; i < 20 && vy >= 440; i++) { await sleep(60); vy = Math.min(vy, await ev(`return __mm.cute.p.y`)); }
 await touch('touchEnd', []);
 check(vy < 440, 'jump button jumps (' + vy + ')');
 // garden
-await ev(`__mm.startGarden(null)`); await sleep(1200);
-await tapEl('#wakePrompt'); await sleep(4500);
+await ev(`__mm.startGarden(null)`);
+for (let i = 0; i < 60 && await ev(`return document.getElementById('wakePrompt').classList.contains('hidden')`); i++) await sleep(500);
+await tapEl('#wakePrompt');
+for (let i = 0; i < 120 && await ev(`return __mm.horror.phase`) !== 'play'; i++) await sleep(500);
 check(await ev(`return __mm.horror.phase`) === 'play', 'woke up by tapping');
 check(await ev(`return getComputedStyle(document.getElementById('tbLight')).display !== 'none'`), '3D touch buttons visible');
 await shot('03-garden');
