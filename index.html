@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mochi's Happy Meadow</title>
+<meta name="description" content="A super cute little bunny platformer! Collect carrots with your friends in the sunny meadow ♥">
+<link rel="icon" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="c3d" class="hidden"></canvas>
+<canvas id="c2d" class="hidden"></canvas>
+
+<div id="vignette3d" class="hidden"></div>
+<div id="slit"></div>
+<canvas id="grain"></canvas>
+
+<div id="hud3d" class="hidden">
+  <div id="smileBox"><span class="smileIcon">☺</span> <span id="smiles">0 / 5</span></div>
+  <div class="bars">
+    <div class="barLbl">LIGHT</div><div class="bar"><div id="battery"></div></div>
+    <div class="barLbl">BREATH</div><div class="bar"><div id="stamina"></div></div>
+  </div>
+  <div id="keys">WASD move · Mouse look · Shift run · C crouch · F light · E hide</div>
+</div>
+<div id="hidePrompt" class="prompt hidden">E — hide in box</div>
+<div id="subs3d"></div>
+
+<canvas id="scare"></canvas>
+<div id="redflash"></div>
+<div id="blackout"></div>
+<div id="whiteout"></div>
+
+<div id="wakePrompt" class="center hidden"><div class="soft">click to wake up</div></div>
+<div id="pausedUI" class="center hidden"><div class="soft">paused — click to keep going</div><div class="tiny">it is still out there</div></div>
+<div id="caughtUI" class="center hidden">
+  <div class="caughtTitle">SUNNY FOUND YOU</div>
+  <div class="tiny">your smiles are still yours. for now.</div>
+  <button id="retryBtn" class="btn dark">try again</button>
+</div>
+
+<div id="title" class="screen">
+  <div class="titleCard">
+    <div class="bunnyHop">🐰</div>
+    <h1>Mochi's<br>Happy Meadow</h1>
+    <p class="tag">collect carrots with your best friends! ♥</p>
+    <button id="playBtn" class="btn">Play ♥</button>
+    <button id="contBtn" class="btn alt hidden">Continue</button>
+    <button id="padBtn" class="btn small">Controllers: ON</button>
+    <p class="tiny pinkTiny">🎧 best with headphones</p>
+    <p class="tiny pinkTiny">← → / A D move · Space jump · Space / E talk</p>
+  </div>
+</div>
+
+<div id="endUI" class="screen hidden">
+  <div class="endCard">
+    <h1>THE END</h1>
+    <p>see you tomorrow :)</p>
+    <button id="againBtn" class="btn">play again</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
