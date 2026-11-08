@@ -48,7 +48,8 @@ const LEVELS = [
     events: [
       { x: 430, steps: [say('Bea', 'Mochi... have you seen Pip?'), say('Bea', 'Sunny said it wanted to show him a secret. He never came home.'), say('Mochi', 'I\'m sure he\'s okay! Let\'s look for him!')] },
       { x: 1450, steps: [say('Mochi', 'This is Pip\'s hat...'), { do: g => { g.glitch(0.4); g.sunMood = 1; } }, say('Sunny', 'Don\'t worry about Pip :)'), say('Sunny', 'He\'s on the other side now.', true), { do: g => { g.sunMood = 0; } }] },
-      { x: 2350, steps: [say('Mochi', 'Bea? Where did you go?'), say('Mochi', '...everyone is so quiet today.')] }
+      { x: 1950, steps: [{ do: g => { g.sunMode = 'gone'; g.glitch(0.15); } }] },
+      { x: 2350, steps: [say('Mochi', 'Bea? Where did you go?'), say('Mochi', '...everyone is so quiet today.'), say('Mochi', 'wait. where did the sun go?')] }
     ]
   },
   {
@@ -60,6 +61,8 @@ const LEVELS = [
     goal: null,
     events: [
       { x: 120, steps: [say('Mochi', 'It\'s so quiet today...'), { do: g => { g.sunMood = 1; } }, say('Sunny', 'Good morning, Mochi.'), say('Sunny', 'I watched you sleep last night. You looked so soft.', true)] },
+      { x: 900, steps: [{ do: g => { audio.stopMusic(); g.extraC = 0.15; } }, { wait: 1.2 }, say('???', 'don\'t turn around, mochi.', true), say('???', 'it\'s right behind you.', true),
+        { do: g => { g.dontTurn = 6; } }] },
       { x: 1290, steps: [say('Mochi', 'Bea! There you are!'), { do: g => { const b = g.actors.find(a => a.type === 'bear'); b.back = false; b.hollow = true; g.glitch(0.5); audio.stinger(); } },
         say('Bea', 'it\'s not a sun, mochi.', true), say('Bea', 'it\'s a FACE.', true),
         { do: g => { g.actors = g.actors.filter(a => a.type !== 'bear'); g.glitch(0.8); g.faceFlash = 0.25; audio.scream(); } }] },
@@ -109,7 +112,7 @@ export class Cute2D {
     this.events = L.events.map(e => ({ ...e, done: false }));
     this.script = null; this.dialog = null; this.waitT = 0;
     this.sunMood = 0; this.sunMode = 'sky'; this.sunT = 0;
-    this.lock = false; this.frozen = false; this.done = false;
+    this.lock = false; this.frozen = false; this.done = false; this.dontTurn = 0;
     this.glitchT = 0; this.faceFlash = 0; this.extraC = 0;
     this.fade = 1; this.fadeTarget = 0;
     this.card = L.title ? { t: 0, title: L.title, sub: L.sub, bad: L.badSub } : null;
@@ -153,6 +156,14 @@ export class Cute2D {
     }
     if (c > 0.25 && Math.random() < dt * c * 0.35) this.glitch(0.08 + Math.random() * 0.2 * c);
     if (this.levelIndex === 2 && Math.random() < dt * 0.025) { this.faceFlash = 0.07; audio.glitch(0.1); }
+    if (this.dontTurn > 0) {
+      this.dontTurn -= dt;
+      if (this.p.facing < 0) {
+        this.dontTurn = 0; this.faceFlash = 0.55; this.glitch(0.6); audio.scream();
+        setTimeout(() => audio.speak('I told you not to look.'), 900);
+        setTimeout(() => audio.playMusic('cute', this.corruption), 2500);
+      } else if (this.dontTurn <= 0) { audio.giggle(-0.8, 0.3); audio.playMusic('cute', this.corruption); }
+    }
 
     const p = this.p;
     const busy = !!this.script || !!this.dialog || this.waitT > 0 || this.lock || this.done;
@@ -209,7 +220,11 @@ export class Cute2D {
       const s = this.script.shift();
       if (s.do) { s.do(this); if (this.frozen) { this.script = null; return; } continue; }
       if (s.wait) { this.waitT = s.wait; return; }
-      if (s.say) { this.dialog = { who: s.say[0], text: s.say[1], shown: 0, glitch: s.glitch }; return; }
+      if (s.say) {
+        this.dialog = { who: s.say[0], text: s.say[1], shown: 0, glitch: s.glitch };
+        if ((this.levelIndex === 2 || this.levelIndex === 'ending') && (s.say[0] === 'Sunny' || s.say[0] === '???') && (s.glitch || this.levelIndex === 'ending' || this.sunMood >= 2)) audio.speak(s.say[1]);
+        return;
+      }
     }
     this.script = null;
   }
@@ -288,6 +303,12 @@ export class Cute2D {
       if (a.type === 'hat') A.hat(ctx, a.x, GROUND - 2, 0.9);
       if (a.type === 'gore') this.drawGore(ctx, a.x);
     }
+    if (this.dontTurn > 0) {
+      const peek = Math.min(1, (6 - this.dontTurn) / 3);
+      ctx.save(); ctx.globalAlpha = 0.85;
+      A.sun(ctx, cam - 260 + peek * 180, 300, 210, t, { mood: 3, lookX: 1, lookY: 0.3 });
+      ctx.restore();
+    }
     // player
     A.bunny(ctx, p.x, p.y + 2, 1, { facing: p.facing, t, squash: p.squash, blink: (t % 3.5) < 0.12, earDroop: c > 0.8 });
     // descending sun
@@ -305,6 +326,7 @@ export class Cute2D {
     ctx.restore();
 
     // grading
+    if (this.dontTurn > 0) { ctx.fillStyle = `rgba(60,0,0,${0.25 + Math.sin(t * 5) * 0.1})`; ctx.fillRect(0, 0, W, H); }
     if (c > 0.02) {
       ctx.globalCompositeOperation = 'saturation'; ctx.fillStyle = `rgba(128,128,128,${c * 0.75})`; ctx.fillRect(0, 0, W, H);
       ctx.globalCompositeOperation = 'source-over';

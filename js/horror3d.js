@@ -29,7 +29,8 @@ export class Horror3D {
     this.emit = emit;
     this.cuteCanvas = cuteCanvas;
     const r = this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    r.setPixelRatio(Math.min(devicePixelRatio, 1.5));
+    this.mobile = (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window);
+    r.setPixelRatio(Math.min(devicePixelRatio, this.mobile ? 1 : 1.5));
     r.setSize(innerWidth, innerHeight);
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x06050a);
@@ -53,8 +54,8 @@ export class Horror3D {
     if (this.built) return; this.built = true;
     const S = this.scene, R = rng(777);
     this.circles = []; this.boxes = []; this.occluders = [];
-    S.add(new THREE.AmbientLight(0x2a2440, 0.9));
-    const moon = new THREE.DirectionalLight(0x6677aa, 0.5); moon.position.set(-20, 40, 10); S.add(moon);
+    this.ambient = new THREE.AmbientLight(0x2a2440, 0.9); S.add(this.ambient);
+    const moon = this.moon = new THREE.DirectionalLight(0x6677aa, 0.5); moon.position.set(-20, 40, 10); S.add(moon);
     const fl = this.flashlight = new THREE.SpotLight(0xfff0d0, 45, 40, 0.5, 0.55, 1);
     fl.position.set(0.25, -0.2, 0); fl.target.position.set(0, -0.3, -5);
     this.camera.add(fl); this.camera.add(fl.target);
@@ -74,9 +75,9 @@ export class Horror3D {
     S.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0x9988aa, size: 1.6, sizeAttenuation: false, fog: false })));
 
     // grass tufts
-    const grass = new THREE.InstancedMesh(new THREE.ConeGeometry(0.06, 0.4, 3), new THREE.MeshLambertMaterial({ color: 0x2c3d22 }), 3000);
+    const grass = new THREE.InstancedMesh(new THREE.ConeGeometry(0.06, 0.4, 3), new THREE.MeshLambertMaterial({ color: 0x2c3d22 }), this.mobile ? 1200 : 3000);
     const m4 = new THREE.Matrix4();
-    for (let i = 0; i < 3000; i++) { m4.makeRotationY(R() * 6); m4.setPosition((R() - 0.5) * 92, 0.18, (R() - 0.5) * 92); grass.setMatrixAt(i, m4); }
+    for (let i = 0; i < grass.count; i++) { m4.makeRotationY(R() * 6); m4.setPosition((R() - 0.5) * 92, 0.18, (R() - 0.5) * 92); grass.setMatrixAt(i, m4); }
     S.add(grass);
 
     // picket fence
@@ -432,7 +433,8 @@ export class Horror3D {
     this.camera.fov = 70; this.camera.updateProjectionMatrix();
     this.resetPlayer();
     this.sunny.position.set(0, 0, 21); this.sunny.visible = true;
-    this.mon = { state: 'dormant', target: new THREE.Vector3(), unseen: 0, seenWas: false, stingCool: 0, lostT: 0, timer: 0, dormantT: 0 };
+    this.mon = { state: 'dormant', target: new THREE.Vector3(), unseen: 0, seenWas: false, stingCool: 0, lostT: 0, timer: 0, dormantT: 0, stepT: 0, sayCool: 0 };
+    this.blackoutEv = null; this.fakeT = 30 + Math.random() * 20; this.boxSurprise = false; this.inHouse = false;
     audio.startDrone();
     $('blackout').classList.add('on');
     this.showPrompt('wakePrompt', true);
@@ -471,15 +473,58 @@ export class Horror3D {
     this.saveProgress();
     const lines = ['Sunny felt that.', 'Sunny is getting angry.', 'it knows. it KNOWS.', 'one more. it is so close now.', 'GO HOME, MOCHI. RUN.'];
     this.sub(lines[this.stickerCount - 1], 4, '#ffcc66');
+    setTimeout(() => this.say(['that was MINE.', 'give them BACK.', 'I can smell you, mochi.', 'you cannot leave the garden.', 'COME HOME, MOCHI.'][this.stickerCount - 1]), 1400);
+    if (this.stickerCount === 3) setTimeout(() => this.startBlackout(), 3200);
     if (this.stickerCount === 2 || this.stickerCount === 4) setTimeout(() => { this.scareFlash(150); audio.stinger(); }, 900);
     if (this.mon.state === 'dormant') this.mon.state = 'patrol';
     if (this.stickerCount >= 5) {
-      this.door.visible = true; this.doorLight.intensity = 30; this.mon.state = 'rage';
+      this.door.visible = true; this.doorLight.intensity = 30; this.mon.state = 'rage'; this.enrage();
       setTimeout(() => this.sub('The way home is open. Behind you. Where you woke up.', 5, '#ffb0d8'), 4200);
     } else {
       // it hears the chime
       this.mon.state = 'investigate'; this.mon.target.copy(this.pl.pos);
     }
+  }
+
+  say(text, sub = true) {
+    audio.speak(text);
+    if (sub) this.sub('Sunny: ' + text, 3.5, '#ff6a4a');
+  }
+
+  enrage() {
+    // the garden turns red and everything screams
+    this.scene.fog.color.setHex(0x1c0404); this.scene.background.setHex(0x1c0404);
+    this.ambient.color.setHex(0x502020); this.raging = true;
+  }
+
+  startBlackout() {
+    if (this.phase !== 'play' || this.blackoutEv) return;
+    this.blackoutEv = { t: 0, stage: 0 };
+    audio.noise(audio.now, 0.4, 0.6, 'lowpass', 300, 60); // the bulb pops
+    this.sub('Your light died.', 3);
+  }
+
+  updateBlackout(dt) {
+    const b = this.blackoutEv, pl = this.pl, cam = this.camera;
+    b.t += dt;
+    if (b.stage < 4) { this.flashlight.intensity = 0; this.ambient.intensity = 0.05; this.moon.intensity = 0; }
+    audio.setBreath(1); audio.setHeart(0.85);
+    if (b.stage === 0 && b.t > 1.4) { b.stage = 1; audio.sunStep(0.9, 0.7); }
+    if (b.stage === 1 && b.t > 2.2) { b.stage = 2; audio.sunStep(-0.5, 0.9); }
+    if (b.stage === 2 && b.t > 3.0) { b.stage = 3; audio.whisper(0); audio.speak('peekaboo.', { pitch: 0.05, rate: 0.5 }); }
+    if (b.stage === 3 && b.t > 4.6) {
+      // lights back... and it is RIGHT THERE
+      b.stage = 4; this.ambient.intensity = 0.9; this.moon.intensity = 0.5;
+      const f = cam.getWorldDirection(new THREE.Vector3()); f.y = 0; f.normalize();
+      this.sunny.position.set(pl.pos.x + f.x * 1.7, pl.pos.y - 3.1, pl.pos.z + f.z * 1.7);
+      this.newPose(); audio.stinger(); this.scareFlash(160);
+    }
+    if (b.stage === 4) this.flashlight.intensity = 45;
+    if (b.stage === 4 && b.t > 6.2) {
+      b.stage = 5; this.flashlight.intensity = 0;
+      this.sunny.position.copy(this.farSpot()); audio.giggle(0, 0.35);
+    }
+    if (b.t > 6.6) { this.ambient.intensity = 0.9; this.moon.intensity = 0.5; this.blackoutEv = null; this.mon.state = 'chase'; this.mon.target.set(pl.pos.x, 0, pl.pos.z); }
   }
 
   saveProgress() {
@@ -541,7 +586,8 @@ export class Horror3D {
       this.pl.pitch = 0; this.pl.yaw = 0;
       if (this.stickerCount === 0) setTimeout(() => this.sub('There is something standing out there.', 4), 1500);
       else { this.mon.state = this.stickerCount >= 5 ? 'rage' : 'patrol'; this.mon.dormantT = 99; this.sunny.position.copy(this.farSpot()); }
-      if (this.stickerCount >= 5) { this.door.visible = true; this.doorLight.intensity = 30; }
+      if (this.stickerCount >= 5) { this.door.visible = true; this.doorLight.intensity = 30; this.enrage(); }
+      else setTimeout(() => this.say('mochi... come out and play.'), 6000);
     }
   }
 
@@ -593,7 +639,7 @@ export class Horror3D {
     // hiding
     const nearBox = this.hideBoxes.find(b => Math.hypot(b.position.x - pl.pos.x, b.position.z - pl.pos.z) < 1.9);
     this.showPrompt('hidePrompt', !!(pl.hidden || nearBox));
-    $('hidePrompt').textContent = pl.hidden ? 'E — climb out' : 'E — hide in box';
+    $('hidePrompt').textContent = this.mobile ? (pl.hidden ? '✋ climb out' : '✋ hide in box') : (pl.hidden ? 'E — climb out' : 'E — hide in box');
     if (input.interactPressed()) {
       if (pl.hidden) {
         const b = pl.hidden; pl.hidden = null; $('slit').classList.remove('on');
@@ -603,6 +649,10 @@ export class Horror3D {
         pl.hidden = nearBox; pl.flash = false; $('slit').classList.add('on'); audio.thud(0);
         // if it watched you climb in, it knows
         pl.seenHiding = m.state === 'chase' && this.sunny.position.distanceTo(pl.pos) < 9;
+        if (!this.boxSurprise && this.stickerCount >= 1 && Math.random() < 0.5) {
+          this.boxSurprise = true;
+          setTimeout(() => { if (pl.hidden) { audio.whisper(0.6); audio.speak('this is MY box, mochi.', { pitch: 0.05, rate: 0.6, volume: 0.8 }); this.sub('something is in here with you', 3); } }, 1500);
+        }
       }
     }
     let speed = 0, moving = false;
@@ -656,15 +706,42 @@ export class Horror3D {
       }
     }
 
+    if (this.blackoutEv) { this.updateBlackout(dt); this.head.lookAt(cam.position); this.hud(dist); return; }
     this.updateSunny(dt, dist, lightOn);
+    // footsteps right behind you that aren't there
+    this.fakeT -= dt;
+    if (this.fakeT <= 0) {
+      this.fakeT = 35 + Math.random() * 35;
+      if (this.stickerCount >= 1 && dist > 18) { audio.sunStep(0, 0.8); setTimeout(() => audio.sunStep(0.1, 0.9), 650); setTimeout(() => audio.whisper(0), 1200); }
+    }
+    // the playhouse door slams behind you
+    const P = this.POI.house, inH = Math.abs(pl.pos.x - P.x) < 2.9 && pl.pos.z < P.z + 2.9 && pl.pos.z > P.z - 2.9;
+    if (inH && !this.inHouse) { this.inHouse = true; setTimeout(() => { if (this.phase === 'play') { audio.thud(0); audio.thud(0); audio.giggle(0, 0.3); } }, 900); }
+    if (!inH) this.inHouse = false;
+    if (this.raging && Math.random() < dt * 0.35 && this.flowers.length) {
+      const f = this.flowers[(Math.random() * this.flowers.length) | 0];
+      const d = f.g.position.distanceTo(cam.position);
+      if (d < 25) { f.twitch = 1; audio.flowerShriek(Math.max(-1, Math.min(1, (f.g.position.x - cam.position.x) / 10))); }
+    }
 
-    // HUD
+    this.hud(dist);
+  }
+
+  hud(dist) {
+    const pl = this.pl;
     $('battery').style.width = pl.battery + '%';
     $('battery').style.background = pl.battery < 20 ? '#d33' : '#8f8';
     $('stamina').style.width = pl.stamina + '%';
     audio.setHeart(Math.max(0, 1 - dist / 18));
     audio.setDroneTension(Math.max(0, 1 - dist / 25));
     $('vignette3d').style.opacity = 0.55 + Math.max(0, 1 - dist / 12) * 0.45;
+    if (!this.blackoutEv) audio.setBreath(Math.max((60 - pl.stamina) / 60, 1 - dist / 10, pl.hidden && dist < 10 ? 0.7 : 0));
+    // the closer it is, the more your eyes go wrong
+    const k = Math.max(0, 1 - dist / 9), cv = this.renderer.domElement;
+    if (k > 0.02) {
+      cv.style.filter = `contrast(${1 + k * 0.5}) saturate(${1 - k * 0.7}) sepia(${k * 0.4})`;
+      cv.style.transform = `translate(${(Math.random() - 0.5) * k * 10}px, ${(Math.random() - 0.5) * k * 10}px) scale(${1 + k * 0.03})`;
+    } else if (cv.style.filter) { cv.style.filter = ''; cv.style.transform = ''; }
   }
 
   isSeen(lightOn) {
@@ -708,7 +785,7 @@ export class Horror3D {
       if (!seen) m.unseen += dt; else m.unseen = 0;
       if (m.unseen > 0.4 && S.position.distanceTo(new THREE.Vector3(0, 0, 21)) < 1) {
         S.position.copy(this.farSpot()); audio.giggle(Math.random() * 2 - 1, 0.2);
-        this.sub('It moved when you looked away.', 4);
+        this.sub('It moved when you looked away.', 4); setTimeout(() => audio.speak('hehehe.', { pitch: 0.05, rate: 0.5, volume: 0.7 }), 600);
       }
       if (m.dormantT > 35) m.state = 'patrol';
       return;
@@ -759,6 +836,22 @@ export class Horror3D {
     if (Math.random() < dt * 0.04) audio.giggle(Math.random() * 2 - 1, 0.12 + Math.max(0, 1 - dist / 30) * 0.3);
     if (Math.random() < dt * 0.02) audio.whisper(Math.random() * 2 - 1);
 
+    // you can hear exactly where it is
+    m.stepT -= dt * speed;
+    if (m.stepT <= 0) {
+      m.stepT = 1.7;
+      if (dist < 26) {
+        const rel = S.position.clone().sub(this.camera.position).setY(0).normalize();
+        const pan = rel.x * Math.cos(pl.yaw) - rel.z * Math.sin(pl.yaw);
+        audio.sunStep(pan, Math.pow(1 - dist / 26, 1.5));
+      }
+    }
+    m.sayCool -= dt;
+    if (m.sayCool <= 0) {
+      if (m.state === 'chase' && m.lostT === 0) { this.say(['I see you, mochi.', 'there you are.', 'dont run. dont RUN.'][(Math.random() * 3) | 0]); m.sayCool = 14; }
+      else if (pl.hidden && dist < 7) { this.say(['where did you go?', 'I can hear your heart, mochi.', 'come out come out.'][(Math.random() * 3) | 0]); m.sayCool = 16; }
+    }
+
     if (!pl.hidden && dist < 1.35) this.caught();
   }
 
@@ -766,7 +859,7 @@ export class Horror3D {
     this.phase = 'caught'; this.pt = 0;
     if (this.pl.hidden) { this.pl.hidden = null; $('slit').classList.remove('on'); }
     this.showPrompt('hidePrompt', false);
-    audio.scream(); audio.setHeart(0);
+    audio.scream(); audio.setHeart(0); audio.setBreath(0); setTimeout(() => audio.speak('found you.', { pitch: 0.05, rate: 0.6 }), 1300);
     this.flashlight.intensity = 45;
     $('redflash').classList.add('on');
     const S = this.sunny, cam = this.camera;

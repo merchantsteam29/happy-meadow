@@ -88,6 +88,7 @@ export const audio = {
         m.next += spb; m.step++;
       }
     }
+    this.breathTick();
     // heartbeat
     const h = this.heart;
     if (h.level > 0.02) {
@@ -181,6 +182,40 @@ export const audio = {
     const ctx = this.ctx; if (!ctx) return;
     const p = ctx.createStereoPanner(); p.pan.value = pan; p.connect(this.sfxGain);
     const t = this.now; this.tone(90, t, 0.5, 'sine', 0.6, p, 30); this.noise(t, 0.2, 0.4, 'lowpass', 400, 100, 1, p);
+  },
+  // Sunny's heavy, wrong footsteps. pan -1..1, vol 0..1
+  sunStep(pan = 0, vol = 1) {
+    const ctx = this.ctx; if (!ctx || vol <= 0.01) return;
+    const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); p.connect(this.sfxGain);
+    const t = this.now;
+    this.tone(70, t, 0.35, 'sine', 0.7 * vol, p, 28);
+    this.noise(t, 0.25, 0.5 * vol, 'lowpass', 600, 90, 1, p);
+    if (Math.random() < 0.5) this.noise(t + 0.08, 0.12, 0.25 * vol, 'bandpass', 2800 + Math.random() * 1500, null, 8, p); // a joint cracking
+  },
+  // the player's breathing gets ragged when scared or out of breath
+  setBreath(level) { this.breath = Math.max(0, Math.min(1, level)); },
+  breathTick() {
+    if (!this.ctx || !(this.breath > 0.15)) return;
+    const t = this.now;
+    if (!this.nextBreath || this.nextBreath < t) this.nextBreath = t + 0.05;
+    if (this.nextBreath > t + 0.1) return;
+    const b = this.breath, len = 0.9 - b * 0.5;
+    this.noise(this.nextBreath, len * 0.55, 0.06 + b * 0.16, 'bandpass', 900 + b * 500, 600, 1.2);
+    this.noise(this.nextBreath + len * 0.6, len * 0.45, 0.04 + b * 0.12, 'bandpass', 1300 + b * 400, 900, 1.5);
+    this.nextBreath += len * 1.15;
+  },
+  // Sunny talks. Very low and slow, through the browser's speech voice.
+  speak(text, { pitch = 0.05, rate = 0.72, volume = 1 } = {}) {
+    try {
+      const s = window.speechSynthesis; if (!s) return;
+      s.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.pitch = pitch; u.rate = rate; u.volume = volume;
+      const vs = s.getVoices();
+      const v = vs.find(v => /en/i.test(v.lang) && /male|david|daniel|fred|george|guy/i.test(v.name)) || vs.find(v => /en/i.test(v.lang));
+      if (v) u.voice = v;
+      s.speak(u);
+    } catch (e) {}
   },
   whisper(pan = 0) {
     const ctx = this.ctx; if (!ctx) return;

@@ -1,0 +1,15 @@
+import { open } from './harness.mjs';
+const { ev, sleep, check, done, shot } = await open(import.meta.url);
+await sleep(2000); await ev('window.__mmCap = 0.4');
+await ev(`document.getElementById('playBtn').click()`); await sleep(1000);
+await ev(`__mm.startGarden(null)`); await sleep(800);
+await ev(`document.getElementById('wakePrompt').click()`); await sleep(5000);
+await ev(`const h=__mm.horror; h.paused=false; h.mon.state='patrol'; h.sunny.position.set(40,0,-40); h.startBlackout();`);
+await sleep(3000); await shot('during');
+console.log('during', await ev(`return [__mm.horror.flashlight.intensity, __mm.horror.ambient.intensity]`));
+await sleep(900); await shot('peek');
+await sleep(4000);
+const r = await ev(`const h=__mm.horror; return [h.flashlight.intensity, h.ambient.intensity, h.moon.intensity, h.pl.flash, !!h.blackoutEv, h.phase]`);
+console.log('after', r);
+check(r[0] > 0 && r[1] > 0.5 && !r[4], 'lights restored after blackout');
+await done();

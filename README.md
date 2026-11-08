@@ -8,6 +8,7 @@ A cute little bunny platformer. Definitely nothing else. ♥
 Run: `node serve.js` and open http://localhost:8080 (or any static server). Chrome recommended, headphones strongly recommended.
 
 Controls: 2D: A/D or arrows, Space to jump/talk. 3D: WASD, mouse, Shift run, C crouch, F flashlight, E hide. Standard gamepads work (wheels/joysticks are ignored; toggle on the title).
+Phones/tablets: play sideways. 2D: ◀ ▶ and ⤒ buttons, tap to talk. 3D: left thumb = move stick, right side drag = look, buttons for light, hide, run, crouch.
 
 Debug: `?day=3` starts on Day 3, `?garden` jumps to the 3D garden.
-Playtest: `PORT=8093 node serve.js` then `MM_URL=http://localhost:8093/ node tools/playtest/run.mjs` (screenshots in tools/playtest/shots).
+Playtest: `PORT=8093 node serve.js` then `MM_URL=http://localhost:8093/ node tools/playtest/run.mjs` (screenshots in tools/playtest/shots). Also `mobile.mjs` (touch controls) and `blackout.mjs` (the lights-out scare).

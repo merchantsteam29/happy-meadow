@@ -7,6 +7,26 @@ import * as A from './art.js';
 const $ = id => document.getElementById(id);
 const c2d = $('c2d'), c3d = $('c3d');
 input.init();
+const TOUCH = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+if (TOUCH) {
+  input.initTouch();
+  $('ctrlHint').textContent = '◀ ▶ move · ⤒ jump · tap to talk';
+  $('wakeTxt').textContent = 'tap to wake up';
+  $('touchUI').classList.remove('hidden');
+}
+let touchMode = '';
+function setTouchMode(m) {
+  if (!TOUCH || m === touchMode) return;
+  touchMode = m; const ui = $('touchUI');
+  ui.classList.toggle('m2d', m === '2d'); ui.classList.toggle('m3d', m === '3d');
+  if (m !== '3d') { input.touch.held.clear(); input.touch.mx = input.touch.my = 0; }
+}
+// phones: go fullscreen and sideways when the game starts
+function goFullscreen() {
+  if (!TOUCH) return;
+  try { const r = document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }); r?.catch?.(() => {}); } catch (e) {}
+  try { screen.orientation?.lock?.('landscape')?.catch?.(() => {}); } catch (e) {}
+}
 
 let state = 'title';
 const cute = new Cute2D(c2d, onEvent);
@@ -58,7 +78,7 @@ const padLabel = () => $('padBtn').textContent = `Controllers: ${input.padsEnabl
 padLabel();
 $('padBtn').onclick = () => { input.setPads(!input.padsEnabled); padLabel(); };
 $('playBtn').onclick = async () => {
-  audio.init();
+  audio.init(); goFullscreen();
   await document.fonts.ready;
   $('title').classList.add('hidden');
   c2d.classList.remove('hidden');
@@ -67,7 +87,7 @@ $('playBtn').onclick = async () => {
   input.endFrame();
 };
 $('contBtn').onclick = async () => {
-  audio.init();
+  audio.init(); goFullscreen();
   await document.fonts.ready;
   $('title').classList.add('hidden');
   startGarden(save);
@@ -76,7 +96,7 @@ $('againBtn').onclick = () => { try { localStorage.removeItem('meadow_progress')
 $('retryBtn').onclick = e => { e.stopPropagation(); wantLock(); horror.retry(); };
 
 // ---------- pointer lock / pause ----------
-function wantLock() { if (document.pointerLockElement) return; try { const p = c3d.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+function wantLock() { if (TOUCH || document.pointerLockElement) return; try { const p = c3d.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
 $('wakePrompt').addEventListener('click', () => { wantLock(); horror.clickedToWake(); });
 $('pausedUI').addEventListener('click', () => { wantLock(); });
 document.addEventListener('pointerlockchange', () => {
@@ -111,6 +131,7 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min(window.__mmCap || 0.05, (now - last) / 1000); last = now;
   input.poll();
+  setTouchMode(state === 'cute' || state === 'ending' ? '2d' : state === 'horror' && horror.phase === 'play' ? '3d' : '');
   if (state === 'cute' || state === 'ending') { cute.update(dt); cute.draw(); }
   else if (state === 'transition') { cute.update(dt); cute.draw(); horror.update(dt); }
   else if (state === 'horror') {

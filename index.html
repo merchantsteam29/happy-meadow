@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ff9ec7">
 <title>Mochi's Happy Meadow</title>
 <meta name="description" content="A super cute little bunny platformer! Collect carrots with your friends in the sunny meadow ♥">
 <link rel="icon" href="favicon.svg">
@@ -38,12 +41,31 @@
 <div id="hidePrompt" class="prompt hidden">E — hide in box</div>
 <div id="subs3d"></div>
 
+<div id="touchUI" class="hidden">
+  <div id="t2d" class="tmode">
+    <div class="tzone" id="tz2dTap"></div>
+    <button class="tbtn" data-act="left" id="tbLeft">◀</button>
+    <button class="tbtn" data-act="right" id="tbRight">▶</button>
+    <button class="tbtn big" data-act="jump" id="tbJump">⤒</button>
+  </div>
+  <div id="t3d" class="tmode">
+    <div class="tzone" id="tzMove"></div>
+    <div class="tzone" id="tzLook"></div>
+    <div id="stick"><div id="knob"></div></div>
+    <button class="tbtn dark" data-act="light" id="tbLight">🔦</button>
+    <button class="tbtn dark" data-act="hide" id="tbHide">✋</button>
+    <button class="tbtn dark" data-act="run" id="tbRun">🏃</button>
+    <button class="tbtn dark" data-act="crouch" id="tbCrouch">⬇</button>
+  </div>
+</div>
+<div id="rotate"><div>🐰</div>turn your phone sideways ♥</div>
+
 <canvas id="scare"></canvas>
 <div id="redflash"></div>
 <div id="blackout"></div>
 <div id="whiteout"></div>
 
-<div id="wakePrompt" class="center hidden"><div class="soft">click to wake up</div></div>
+<div id="wakePrompt" class="center hidden"><div class="soft" id="wakeTxt">click to wake up</div></div>
 <div id="pausedUI" class="center hidden"><div class="soft">paused — click to keep going</div><div class="tiny">it is still out there</div></div>
 <div id="caughtUI" class="center hidden">
   <div class="caughtTitle">SUNNY FOUND YOU</div>
@@ -60,7 +82,7 @@
     <button id="contBtn" class="btn alt hidden">Continue</button>
     <button id="padBtn" class="btn small">Controllers: ON</button>
     <p class="tiny pinkTiny">🎧 best with headphones</p>
-    <p class="tiny pinkTiny">← → / A D move · Space jump · Space / E talk</p>
+    <p class="tiny pinkTiny" id="ctrlHint">← → / A D move · Space jump · Space / E talk</p>
   </div>
 </div>
 
