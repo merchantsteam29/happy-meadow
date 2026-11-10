@@ -9,6 +9,22 @@ import * as RN from './real/nature.js';
 import * as RF from './real/fx.js';
 import * as RP from './real/post.js';
 import { buildSunny as buildRealSunny } from './real/sunny.js';
+import { createBatcher } from './batch.js';
+import { createGovernor } from './perf.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+// Merge a node's direct mesh children that share a material into one mesh (they move together anyway).
+function mergeSame(node) {
+  const by = new Map();
+  for (const c of node.children) if (c.isMesh && !c.children.length) { if (!by.has(c.material)) by.set(c.material, []); by.get(c.material).push(c); }
+  for (const [mat, list] of by) {
+    if (list.length < 2) continue;
+    const merged = mergeGeometries(list.map(c => { c.updateMatrix(); return c.geometry.clone().applyMatrix4(c.matrix); }));
+    if (!merged) continue;
+    for (const c of list) node.remove(c);
+    node.add(new THREE.Mesh(merged, mat));
+  }
+}
 
 const $ = id => document.getElementById(id);
 const BOUND = 44.3;
@@ -55,8 +71,27 @@ export class Horror3D {
     this.camera.aspect = innerWidth / innerHeight; this.camera.updateProjectionMatrix();
   }
 
-  // compile every shader once up front
-  warm() { try { this.renderer.compile(this.scene, this.camera); } catch (e) {} }
+  // Compile every shader up front. main.js calls this while the black Day 3 title card is up (and startWake when a save
+  // loads), so the pause lands there instead of mid-scare. Three.js builds each shader for exactly how it's drawn: the
+  // lights in view, the shadow pass, the post-processing texture. So it compiles every object (compile) and then draws
+  // one real frame off screen (the 2D canvas is on top) for the shadow and post passes, twice: as you wake up (the paw,
+  // whose flashlight is a light, still hidden) and in play (paw out). Sunny and the board are hidden until then, so
+  // they're shown for it. Miss a state and every material compiles again, all at once, when it first appears.
+  warm() {
+    if (this.warmed) return; this.warmed = true;
+    const r = this.renderer, rig = this.hand && this.hand.rig;
+    const list = [this.sunny, this.board].filter(o => o && !o.visible), rigWas = rig && rig.visible;
+    for (const o of list) o.visible = true;
+    for (const paw of [false, true]) {
+      if (rig) rig.visible = paw;
+      const prev = r.getRenderTarget();
+      try { r.setRenderTarget(this.post ? this.post.composer.readBuffer : null); r.compile(this.scene, this.camera); } catch (e) {}
+      r.setRenderTarget(prev);
+      try { if (this.post) this.post.composer.render(0); else r.render(this.scene, this.camera); } catch (e) {}
+    }
+    if (rig) rig.visible = rigWas;
+    for (const o of list) o.visible = false;
+  }
 
   get qualitySetting() { try { return localStorage.getItem('meadow_quality') || 'auto'; } catch (e) { return 'auto'; } }
 
@@ -66,7 +101,13 @@ export class Horror3D {
     const q = this.qualitySetting;
     const high = this.high = q === 'high' || (q === 'auto' && !this.mobile);
     const r = this.renderer;
-    r.setPixelRatio(Math.min(devicePixelRatio, high ? 1.5 : 1));
+    this.baseRatio = Math.min(devicePixelRatio, high ? 1.5 : 1);
+    r.setPixelRatio(this.baseRatio);
+    // perf.js trims the render resolution a little when frames run slow (and gives it back when they don't)
+    this.gov = createGovernor({ apply: (k) => {
+      r.setPixelRatio(this.baseRatio * k);
+      if (this.post) { this.post.composer.setPixelRatio(r.getPixelRatio()); this.post.composer.setSize(innerWidth, innerHeight); }
+    } });
     r.shadowMap.enabled = high; r.shadowMap.type = THREE.PCFSoftShadowMap;
     const S = this.scene, R = rng(777);
     this.circles = []; this.boxes = []; this.occluders = [];
@@ -170,6 +211,15 @@ export class Horror3D {
     // everything solid casts and catches shadows from the flashlight
     if (high) S.traverse(o => { if (o.isMesh && !o.isInstancedMesh && o.visible && !o.material.transparent && !(o.material.isMeshBasicMaterial)) { if (o.castShadow === false && o.userData.noShadow) return; o.castShadow = true; o.receiveShadow = true; } });
     this.hand.rig.traverse(o => { o.castShadow = false; o.receiveShadow = false; });
+
+    // merge the still scenery (trees, fence, house, stems...) into a few draw calls; the things that move are left out.
+    // batch.js also notices anything else that starts moving and takes it back out. ?nobatch turns it off.
+    if (!/[?&]nobatch/.test(location.search)) {
+      const dyn = new Set([this.camera, this.swing, this.board, this.door, this.sunny, ...(this.cutouts || []), ...(this.treeEyes || []), ...(this.stickers || []).map(s => s.s)]);
+      for (const f of this.flowers || []) { dyn.add(f.head); if (f.drip) dyn.add(f.drip); }
+      this.batcher = createBatcher(S, { skip: (o) => { for (let p = o; p; p = p.parent) if (dyn.has(p)) return true; return false; } });
+    }
+    this.warm(); // also covers loading a save straight into the garden
   }
 
   buildHouse(p) {
@@ -334,6 +384,7 @@ export class Horror3D {
           t.position.set(Math.cos(a) * 0.3, Math.sin(a) * 0.3, 0.08); t.rotation.z = a + Math.PI / 2; face.add(t);
         }
       }
+      mergeSame(face); // 7 petals (+12 teeth) -> 1 (+1) draw calls
       const drip = new THREE.Mesh(dripG, dripM); g.add(drip);
       this.scene.add(g);
       this.bloodPool(x + (R() - 0.5) * 0.4, z + (R() - 0.5) * 0.4, 0.4 + R() * 0.5);
@@ -507,7 +558,7 @@ export class Horror3D {
   }
 
   takeSticker(s, silent) {
-    s.got = true; s.s.visible = false; s.l.visible = false; this.stickerCount++;
+    s.got = true; s.s.visible = false; s.l.intensity = 0; this.stickerCount++; // dim, don't hide: a hidden light changes the light count and recompiles every material (a long freeze)
     $('smiles').textContent = `${this.stickerCount} / 5`;
     if (silent) return;
     audio.chime(true);
@@ -584,6 +635,8 @@ export class Horror3D {
     else if (this.phase === 'exit') { this.camera.position.z += dt * 1.5; }
     this.animateWorld(dt, T);
     this.realFrame(dt, T);
+    if (this.batcher) this.batcher.update(dt);
+    if (this.gov && this.phase === 'play' && !this.paused) this.gov.tick(dt);
     if (this.post) this.post.composer.render(dt); else this.renderer.render(this.scene, this.camera);
   }
 
