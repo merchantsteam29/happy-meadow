@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#ff9ec7">
 <title>Mochi's Happy Meadow</title>
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="description" content="A super cute little bunny platformer! Collect carrots with your friends in the sunny meadow ♥">
 <link rel="icon" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -82,6 +85,7 @@
     <button id="contBtn" class="btn alt hidden">Continue</button>
     <button id="padBtn" class="btn small">Controllers: ON</button>
     <button id="gfxBtn" class="btn small">Graphics: Auto</button>
+    <button id="installApp" class="btn small" style="display:none">Install app ♥</button>
     <p class="tiny pinkTiny">🎧 best with headphones</p>
     <p class="tiny pinkTiny" id="ctrlHint">← → / A D move · Space jump · Space / E talk</p>
   </div>
@@ -96,5 +100,6 @@
 </div>
 
 <script type="module" src="js/main.js"></script>
+<script src="install.js"></script>
 </body>
 </html>
