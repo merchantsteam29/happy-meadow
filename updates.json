@@ -1,0 +1,41 @@
+[
+  {
+    "version": "1.3",
+    "date": "2026-11-09",
+    "title": "Install as an app",
+    "notes": [
+      "Mochi's Happy Meadow can be installed as an app from the title screen (Install app ♥), with its own bunny icon. It opens fullscreen and works offline once it has loaded."
+    ]
+  },
+  {
+    "version": "1.2",
+    "date": "2026-11-08",
+    "title": "Realistic 3D garden",
+    "notes": [
+      "The garden is far more realistic: flashlight shadows, a light beam through dust and mist, film grain and motion blur.",
+      "Dead twisted trees, tens of thousands of grass blades moving in the wind, and much worse flowers.",
+      "Sunny is new: hunched, starved, in a torn costume and a cracked porcelain mask.",
+      "Heavier movement: head-bob, stumbles and breath fog.",
+      "A Graphics setting (Auto, High, Low)."
+    ]
+  },
+  {
+    "version": "1.1",
+    "date": "2026-11-08",
+    "title": "Scarier, and on phones",
+    "notes": [
+      "Sunny's footsteps move around you, and Sunny speaks.",
+      "Panic breathing, a lights-out scare, fake footsteps behind you, and a red garden in the final chase.",
+      "Phone controls: buttons in the 2D part, and a joystick, drag-to-look and action buttons in 3D."
+    ]
+  },
+  {
+    "version": "1.0",
+    "date": "2026-11-08",
+    "title": "Release",
+    "notes": [
+      "A super cute bunny platformer. Collect carrots in the sunny meadow. Day 1, Day 2, Day 3...",
+      "Something is wrong with the meadow."
+    ]
+  }
+]
