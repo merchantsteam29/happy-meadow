@@ -50,6 +50,7 @@ function onEvent(name, arg) {
     startGarden(null);
   } else if (name === 'escaped') {
     state = 'ending';
+    window.GameSync?.unlock('escape');
     document.exitPointerLock?.();
     ['hud3d', 'vignette3d'].forEach(id => $(id).classList.add('hidden'));
     $('subs3d').classList.remove('on');

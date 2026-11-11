@@ -107,7 +107,10 @@
 (function () {
   if (!window.GameSync) return;
   var idle = function () { var t = document.getElementById("title"); return !!t && t.getClientRects().length > 0 && getComputedStyle(t).visibility !== 'hidden'; };
-  GameSync.init({ game: "meadow", keys: [{ match: 'meadow_progress', mode: 'max' }], idle: idle });
+  GameSync.init({ game: "meadow", ach: [
+    { id: 'garden', name: 'Into the garden', desc: 'Make it to the garden', test: (g) => { const p = g('meadow_progress'); return !!(p && p.stage === 'garden'); } },
+    { id: 'escape', name: 'Out of the meadow', desc: 'Find the way out' }
+  ], keys: [{ match: 'meadow_progress', mode: 'max' }], idle: idle });
   document.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('#syncBtn')) { e.stopPropagation(); GameSync.open(); } }, true);
 })();
 </script>

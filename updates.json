@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.4",
+    "date": "2026-11-11",
+    "title": "Achievements",
+    "notes": [
+      "Achievements: unlock them as you play (a 🏆 pops up), and see them all on the Game Library's new Profile page.",
+      "Your progress syncs between devices too (☁ Sync)."
+    ]
+  },
+  {
     "version": "1.3",
     "date": "2026-11-09",
     "title": "Install as an app",
