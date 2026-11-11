@@ -108,3 +108,14 @@ body.touch .prompt { top: 30%; }
   .btn { margin: 6px auto; padding: 8px 20px; font-size: 18px; }
   .tag { margin: 4px 0 8px; font-size: 15px; }
 }
+
+/* Short windows (small laptops, browser with toolbars): the title card scrolls instead of being cut off top and bottom, and tightens up. */
+#title { overflow-y: auto; align-items: safe center; padding: 16px 0; scrollbar-width: thin; scrollbar-color: #ff9ec7 transparent; }
+@media (max-height: 640px) {
+  .titleCard { padding: 18px 36px; }
+  .titleCard h1 { font-size: clamp(32px, 9vh, 52px); }
+  .titleCard .btn { margin-top: 4px; margin-bottom: 4px; }
+  .titleCard .tiny { margin: 4px 0; }
+  .titleCard .bunnyHop { font-size: 40px; }
+  .titleCard .btn.small { padding-top: 6px; padding-bottom: 6px; }
+}
